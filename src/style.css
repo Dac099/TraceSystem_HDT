@@ -1,0 +1,33 @@
+:root {
+  --bg: #f7f9fb;
+  --accent: #5ea3e0;
+  --accent-dark: #3f8fd2;
+  --text: #24394e;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  /* Minimum font size for the whole application. */
+  font-size: 14px;
+}
+
+body {
+  margin: 0;
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  font-size: 14px;
+  background: var(--bg);
+  color: var(--text);
+}
+
+#app {
+  height: 100vh;
+}
+
+h2 {
+  font-size: 16px;
+  margin: 0;
+  color: #2b4a66;
+}
