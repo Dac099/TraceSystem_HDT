@@ -1,0 +1,32 @@
+{
+  "tcp": {
+    "host": "0.0.0.0",
+    "port": 3000
+  },
+  "database": {
+    "host": "localhost",
+    "port": 5432,
+    "user": "developer",
+    "password": "dev123",
+    "database": "master"
+  },
+  "plcs": [
+    { "ip": "192.168.1.1", "slot": 0, "stationIds": [1, 2, 3, 4] },
+    { "ip": "192.168.1.2", "slot": 0, "stationIds": [5, 6, 7, 8] }
+  ],
+  "plcTagName": "Server_St",
+  "scannerStationMap": {
+    "192.168.1.3": 1,
+    "192.168.1.4": 2,
+    "192.168.1.5": 3,
+    "192.168.1.6": 4,
+    "192.168.1.7": 5,
+    "192.168.1.8": 6,
+    "192.168.1.9": 7,
+    "192.168.1.10": 8
+  },
+  "logs": {
+    "dir": "logs",
+    "retentionDays": 3
+  }
+}
