@@ -28,10 +28,17 @@ function broadcastAlarm(message: string): void {
   broadcast('alarm', { message, ts: Date.now() })
 }
 
+function resolveIcon(): string {
+  return process.env.VITE_DEV_SERVER_URL
+    ? join(__dirname, '../public/icono_yne.png')
+    : join(__dirname, '../dist/icono_yne.png')
+}
+
 function createWindow(): void {
   window = new BrowserWindow({
     width: 1280,
     height: 800,
+    icon: resolveIcon(),
     webPreferences: {
       preload: join(__dirname, 'preload.mjs'),
       contextIsolation: true,
@@ -102,7 +109,12 @@ async function shutdown(): Promise<void> {
 }
 
 app.whenReady().then(async () => {
-  await bootstrap()
+  try {
+    await bootstrap()
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    console.error('Bootstrap failed:', message)
+  }
   registerIpcHandlers(() => window)
   createWindow()
   app.on('activate', () => BrowserWindow.getAllWindows().length === 0 && createWindow())

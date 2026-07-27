@@ -37,7 +37,7 @@ export class Logger implements EipLogger {
 
   private constructor() {
     const { logs } = ConfigService.get()
-    this.logsDir = join(app.getAppPath(), logs.dir)
+    this.logsDir = join(app.getPath('userData'), logs.dir)
     this.retentionDays = logs.retentionDays
     this.devMode = !app.isPackaged
     if (!existsSync(this.logsDir)) mkdirSync(this.logsDir, { recursive: true })
@@ -65,7 +65,9 @@ export class Logger implements EipLogger {
       (fn: (msg: string) => void) =>
       (msg: string, ctx?: Record<string, unknown>): void =>
         fn(ctx ? `${msg} ${JSON.stringify(ctx)}` : msg)
-    return { debug: wrap(logger.debug), info: wrap(logger.info), warn: wrap(logger.warn), error: wrap(logger.error) }
+    // debug is a no-op: ethernet-ip logs every CIP request/response at debug
+    // level, which floods the log file on each 200ms scan cycle.
+    return { debug: () => {}, info: wrap(logger.info), warn: wrap(logger.warn), error: wrap(logger.error) }
   }
 
   private filePathFor(d: Date): string {

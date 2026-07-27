@@ -73,6 +73,11 @@ export class PlcService extends EventEmitter {
         logger.error(`PLC ${this.ip}: scan error`, err)
       }
     })
+    // First successful read of HeartBeat: force the initial ack to true so the
+    // handshake starts right after connect; 'tagChanged' keeps it alive after.
+    this.scanner.on('tagInitialized', (tag) => {
+      if (tag === this.tag(0, 'HeartBeat')) this.onHeartbeat(false)
+    })
   }
 
   private subscribeTags(): void {
@@ -100,7 +105,9 @@ export class PlcService extends EventEmitter {
     for (let i = 1; i <= this.plcConfig.stationIds.length; i++) {
       for (const member of members) tags.push(this.tag(i, member))
     }
-    await this.plc.read(tags)
+    // Read one by one: ethernet-ip v2 batch reads throw "Missing template" for
+    // built-in STRING tags (0x0fce has no template); single reads decode them fine.
+    for (const tag of tags) await this.plc.read(tag)
     Logger.get().info(`PLC ${this.ip}: ${tags.length} tags discovered`)
   }
 

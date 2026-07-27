@@ -171,7 +171,7 @@ export class StationProcess extends EventEmitter {
         shift: parsed.shift,
         julianDate: parsed.julianDate,
         serialNumber: parsed.serialNumber,
-        status: results.statusPart !== 0,
+        status: results.statusPart == 1,
         finalLeakRate: results.finalLeakRate,
         finalPressure: results.finalPressure
       })
