@@ -90,14 +90,13 @@ export class TcpInterface extends EventEmitter {
     // are connected. Until then every payload is accepted no matter its source
     // and is assigned to the temporary default station.
     //
-    // const { scannerStationMap } = ConfigService.get()
-    // const ip = remote.replace(/^::ffff:/, '')
-    // const stationId = scannerStationMap[ip]
-    // if (stationId === undefined) {
-    //   Logger.get().warn(`Scanner IP ${ip} is not mapped to any station; data ignored`)
-    //   return null
-    // }
-    // return String(stationId)
-    return TEMP_DEFAULT_STATION_ID
+    const { scannerStationMap } = ConfigService.get()
+    const ip = _remote.replace(/^::ffff:/, '')
+    const stationId = scannerStationMap[ip]
+    if (stationId === undefined) {
+      Logger.get().warn(`Scanner IP ${ip} is not mapped to any station; data ignored`)
+      return TEMP_DEFAULT_STATION_ID
+    }
+    return String(stationId)
   }
 }
