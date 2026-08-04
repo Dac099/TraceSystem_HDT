@@ -4,7 +4,6 @@
   "private": true,
   "type": "module",
   "main": "dist-electron/main.js",
-  "icon": "public/icono_yne.png",
   "scripts": {
     "dev": "vite",
     "build": "vue-tsc --noEmit && vite build",
@@ -43,7 +42,7 @@
     ],
     "win": {
       "target": "nsis",
-      "icon": "public/icono_yne.png"
+      "icon": "build/icon.ico"
     },
     "nsis": {
       "oneClick": false,
