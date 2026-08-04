@@ -33,3 +33,10 @@ export interface AlarmPayload {
   message: string
   ts: number
 }
+
+export type PlcConnectionStatus = 'conectado' | 'desconectado' | 'reconectando'
+
+export interface PlcStatus {
+  ip: string
+  status: PlcConnectionStatus
+}

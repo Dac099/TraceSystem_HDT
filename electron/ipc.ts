@@ -8,6 +8,7 @@ import {
   type ToolingRecord
 } from './database'
 import { Logger } from './logger'
+import type { PlcStatusPayload } from './plc-service'
 
 export const PAGE_SIZE = 50
 export const LATEST_LIMIT = 100
@@ -52,8 +53,13 @@ function toCsv(rows: ToolingRecord[]): string {
   return '\uFEFF' + [header, ...lines].join('\r\n')
 }
 
-export function registerIpcHandlers(getWindow: () => BrowserWindow | null): void {
+export function registerIpcHandlers(
+  getWindow: () => BrowserWindow | null,
+  getPlcStatuses: () => PlcStatusPayload[]
+): void {
   ipcMain.handle('records:get-latest', () => getLatest(LATEST_LIMIT))
+
+  ipcMain.handle('plcs:get-status', () => getPlcStatuses())
 
   ipcMain.handle('records:query', (_event, filters: RecordFilters, page: number) =>
     queryRecords(filters ?? {}, page, PAGE_SIZE)

@@ -14,6 +14,13 @@ export interface SaveResults {
   finalPressure: number
 }
 
+export type PlcConnectionStatus = 'conectado' | 'desconectado' | 'reconectando'
+
+export interface PlcStatusPayload {
+  ip: string
+  status: PlcConnectionStatus
+}
+
 /**
  * Wraps one PLC connection (ethernet-ip v2): initial tag discovery, tag
  * subscriptions via Scanner, heartbeat watchdog and auto-reconnect wiring.
@@ -22,6 +29,7 @@ export interface SaveResults {
  *  - 'reqSavePart' (stationIndex: number)   rising edge of Server_St[i].ReqSavePart
  *  - 'plcDisconnected' (ip: string)         heartbeat watchdog expired
  *  - 'plcAlive' (ip: string)                heartbeat received again
+ *  - 'statusChanged' (PlcStatusPayload)     derived connection status changed
  */
 export class PlcService extends EventEmitter {
   readonly ip: string
@@ -31,6 +39,9 @@ export class PlcService extends EventEmitter {
   private heartbeatTimer: NodeJS.Timeout | null = null
   private lastScanErrorLog = 0
   private stopped = false
+  private heartbeatAlive = false
+  private watchdogFired = false
+  private status: PlcConnectionStatus = 'reconectando'
 
   constructor(plcConfig: PlcConfig) {
     super()
@@ -51,6 +62,8 @@ export class PlcService extends EventEmitter {
 
     this.plc.on('connected', () => {
       logger.info(`PLC ${this.ip}: connected`)
+      this.watchdogFired = false
+      this.updateStatus()
       this.discoverTags().catch((err) => logger.error(`PLC ${this.ip}: initial tag read failed`, err))
       this.restartHeartbeatWatchdog()
     })
@@ -114,6 +127,9 @@ export class PlcService extends EventEmitter {
   private onHeartbeat(alive: boolean): void {
     if (alive) return
     // HeartBeat dropped to false: acknowledge it back to true and restart the watchdog.
+    this.heartbeatAlive = true
+    this.watchdogFired = false
+    this.updateStatus()
     this.emit('plcAlive', this.ip)
     this.plc.write(this.tag(0, 'HeartBeat'), true).catch((err) => Logger.get().error(`PLC ${this.ip}: heartbeat ack failed`, err))
     this.restartHeartbeatWatchdog()
@@ -122,11 +138,30 @@ export class PlcService extends EventEmitter {
   private restartHeartbeatWatchdog(): void {
     if (this.heartbeatTimer) clearTimeout(this.heartbeatTimer)
     this.heartbeatTimer = setTimeout(() => {
+      this.heartbeatAlive = false
+      this.watchdogFired = true
+      this.updateStatus()
       Logger.get().error(`PLC ${this.ip}: no heartbeat for ${HEARTBEAT_TIMEOUT_MS / 1000}s`)
       this.emit('plcDisconnected', this.ip)
       // Keep watching so a permanently dead PLC keeps raising the alert.
       this.restartHeartbeatWatchdog()
     }, HEARTBEAT_TIMEOUT_MS)
+  }
+
+  /** Derives the connection status and emits 'statusChanged' on transitions. */
+  private updateStatus(): void {
+    const status: PlcConnectionStatus = this.heartbeatAlive
+      ? 'conectado'
+      : this.watchdogFired
+        ? 'desconectado'
+        : 'reconectando'
+    if (status === this.status) return
+    this.status = status
+    this.emit('statusChanged', { ip: this.ip, status })
+  }
+
+  getStatus(): PlcStatusPayload {
+    return { ip: this.ip, status: this.status }
   }
 
   /** Connects to the PLC, retrying until the first connection succeeds. */

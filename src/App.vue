@@ -2,6 +2,7 @@
 import { ref } from 'vue'
 import AlarmStack from './components/AlarmStack.vue'
 import ActivityView from './views/ActivityView.vue'
+import PlcStatusIndicator from './components/PlcStatusIndicator.vue'
 import RecordsView from './views/RecordsView.vue'
 
 type ViewName = 'activity' | 'records'
@@ -21,6 +22,7 @@ const currentView = ref<ViewName>('activity')
           Registros
         </button>
       </nav>
+      <PlcStatusIndicator />
     </header>
 
     <main>
