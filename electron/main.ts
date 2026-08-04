@@ -1,10 +1,10 @@
-import { app, BrowserWindow } from 'electron'
+import { app, BrowserWindow, Menu } from 'electron'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { ConfigService } from './config'
 import { Logger } from './logger'
 import { closeDatabase, initDatabase } from './database'
-import { PlcService } from './plc-service'
+import { PlcService, type PlcStatusPayload } from './plc-service'
 import { TcpInterface, type PlateScanPayload, type ToolingScanPayload } from './tcp-interface'
 import { createStationProcesses, type StationProcess } from './station-process'
 import { registerIpcHandlers } from './ipc'
@@ -39,12 +39,15 @@ function createWindow(): void {
     width: 1280,
     height: 800,
     icon: resolveIcon(),
+    fullscreen: true,
+    autoHideMenuBar: true,
     webPreferences: {
       preload: join(__dirname, 'preload.mjs'),
       contextIsolation: true,
       nodeIntegration: false
     }
   })
+  window.setMenu(null)
 
   window.webContents.on('did-finish-load', () => {
     if (!databaseReady) broadcastAlarm('Base de datos no disponible')
@@ -75,6 +78,7 @@ async function bootstrap(): Promise<void> {
       logger.error(`PLC ${ip} not reachable`)
       broadcastAlarm('PLC no conectado')
     })
+    plc.on('statusChanged', (payload: PlcStatusPayload) => broadcast('plc:status', payload))
     void plc.start()
     return plc
   })
@@ -109,13 +113,14 @@ async function shutdown(): Promise<void> {
 }
 
 app.whenReady().then(async () => {
+  Menu.setApplicationMenu(null)
   try {
     await bootstrap()
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     console.error('Bootstrap failed:', message)
   }
-  registerIpcHandlers(() => window)
+  registerIpcHandlers(() => window, () => plcs.map((plc) => plc.getStatus()))
   createWindow()
   app.on('activate', () => BrowserWindow.getAllWindows().length === 0 && createWindow())
 })
