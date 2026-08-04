@@ -80,7 +80,12 @@ export class TcpInterface extends EventEmitter {
     }
 
     // ToolingScan: "P12815849L3S2D26195N0055"
-    const payload: ToolingScanPayload = { matrix: data, stationId: this.resolveStationId(remote) }
+    const matrix = data
+      .replace(/\x1D/g, "|") // Non-printable character: GS
+      .replace(/\x1E/g, "|") // Non-printable character: RS
+      .replace(/[\x00-\x1F\x7F]/g, "");
+
+    const payload: ToolingScanPayload = { matrix, stationId: this.resolveStationId(remote) }
     this.emit('ToolingScan', payload)
   }
 
