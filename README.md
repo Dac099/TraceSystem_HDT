@@ -33,8 +33,8 @@ TCP scanners → TcpInterface (:3000) → StationProcess ×8 → toolingRecords
 ## TCP scanner protocol
 
 - **ToolingScan**: `P12815849L3S2D261950000055` — parsed by index: part number `[0-8]`,
-  machine line `[9-10]`, shift `[11-12]`, Julian date `[13-18]`, serial number `[19-25]`.
-  The seven-character serial is stored for traceability but does not identify the part; identity is the
+  machine line `[9-10]`, shift `[11-12]`, Julian date `[13-18]`, serial number from `[19]` through
+  a maximum of seven characters. The serial is stored for traceability but does not identify the part; identity is the
   nine-character part number.
 - **PlateScan**: `Ens_Final_12749631,T1` — `modelId,toolingId`.
 
@@ -50,8 +50,8 @@ TCP scanners → TcpInterface (:3000) → StationProcess ×8 → toolingRecords
   part number and exact model. The serial number is not used by these checks.
 - A part number may run only once for an exact model, regardless of whether that record is OK or nOK.
   Final assembly is allowed only after the same part number has an OK subassembly record.
-- After `ReqSavePart`, the result is stored and the PLC receives `Pieza ok almacenada` or
-  `Pieza nOK almacenada`. That message remains until another process message overwrites it.
+- After `ReqSavePart`, the result is stored and the PLC receives `Dato guardado`.
+  That message remains until another process message overwrites it.
 
 Quick manual test (while `pnpm dev` is running):
 

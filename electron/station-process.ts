@@ -15,10 +15,13 @@ export interface ParsedMatrix {
   machineLine: string // [9-10]
   shift: string // [11-12]
   julianDate: string // [13-18]
-  serialNumber: string // [19-25]
+  serialNumber: string // starts at [19], maximum 7 characters
 }
 
-const MATRIX_MIN_LENGTH = 26
+const SERIAL_NUMBER_START = 19
+const MAX_SERIAL_NUMBER_LENGTH = 7
+// The fixed matrix fields end at index 18. At least one serial character is required.
+const MATRIX_MIN_LENGTH = SERIAL_NUMBER_START + 1
 
 export function parseMatrix(matrix: string): ParsedMatrix | null {
   if (matrix.length < MATRIX_MIN_LENGTH) return null
@@ -27,7 +30,7 @@ export function parseMatrix(matrix: string): ParsedMatrix | null {
     machineLine: matrix.slice(9, 11),
     shift: matrix.slice(11, 13),
     julianDate: matrix.slice(13, 19),
-    serialNumber: matrix.slice(19, 26)
+    serialNumber: matrix.slice(SERIAL_NUMBER_START, SERIAL_NUMBER_START + MAX_SERIAL_NUMBER_LENGTH)
   }
 }
 
@@ -221,8 +224,7 @@ export class StationProcess extends EventEmitter {
       })
       this.log().info(`Station ${this.stationId}: record #${record.id} saved (status=${record.status})`)
 
-      const savedMessage = status ? 'Pieza ok almacenada' : 'Pieza nOK almacenada'
-      await this.plc.resetAfterSave(this.stationIndex, savedMessage)
+      await this.plc.resetAfterSave(this.stationIndex, 'Dato guardado')
 
       // Reset the cycle state; the plate is kept until the next PlateScan.
       this.pending = null
