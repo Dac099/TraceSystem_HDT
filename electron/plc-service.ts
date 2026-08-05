@@ -192,6 +192,10 @@ export class PlcService extends EventEmitter {
     return (await this.plc.read(this.tag(stationIndex, 'MachineReady'))) === true
   }
 
+  async readCycleStart(stationIndex: number): Promise<boolean> {
+    return (await this.plc.read(this.tag(stationIndex, 'CycleStart'))) === true
+  }
+
   async readCurrentModel(stationIndex: number): Promise<string> {
     return String(await this.plc.read(this.tag(stationIndex, 'CurrentModel')))
   }
@@ -223,14 +227,14 @@ export class PlcService extends EventEmitter {
     await this.plc.write(this.tag(stationIndex, 'Messages'), message)
   }
 
-  /** Handshake/reset once the record was stored in the database. */
-  async resetAfterSave(stationIndex: number): Promise<void> {
+  /** Handshake/reset once the record was stored, preserving its result on the HMI. */
+  async resetAfterSave(stationIndex: number, message: string): Promise<void> {
     await this.plc.write({
       [this.tag(stationIndex, 'ReqSavePart')]: false,
       [this.tag(stationIndex, 'CycleStart')]: false,
       [this.tag(stationIndex, 'CurrentTooling')]: '',
       [this.tag(stationIndex, 'DataMatrix')]: '',
-      [this.tag(stationIndex, 'Messages')]: ''
+      [this.tag(stationIndex, 'Messages')]: message
     })
   }
 }

@@ -65,7 +65,7 @@ CREATE TABLE IF NOT EXISTS "toolingRecords" (
   "machineLine" varchar(2),
   "shift" varchar(2),
   "julianDate" varchar(6),
-  "serialNumber" varchar(5),
+  "serialNumber" varchar(7),
   "createdAt" timestamptz NOT NULL DEFAULT now(),
   status boolean,
   "finalLeakRate" real,
@@ -75,6 +75,11 @@ CREATE TABLE IF NOT EXISTS "toolingRecords" (
 /** Creates the toolingRecords table when it does not exist yet. */
 export async function initDatabase(): Promise<void> {
   await getPool().query(CREATE_TABLE_SQL)
+  // Existing installations may still have the original five-character serial
+  // column. Widening varchar is idempotent and preserves all historical rows.
+  await getPool().query(
+    'ALTER TABLE "toolingRecords" ALTER COLUMN "serialNumber" TYPE varchar(7)'
+  )
   Logger.get().info('Database ready: table "toolingRecords" verified')
 }
 
@@ -85,13 +90,27 @@ export async function closeDatabase(): Promise<void> {
   }
 }
 
-/** Records belonging to the same physical tool (same part number + serial number). */
-export async function findByToolIdentity(partNumber: string, serialNumber: string): Promise<ToolingRecord[]> {
-  const result = await getPool().query<ToolingRecord>(
-    'SELECT * FROM "toolingRecords" WHERE "partNumber" = $1 AND "serialNumber" = $2 ORDER BY "createdAt" DESC',
-    [partNumber, serialNumber]
+/** Whether this part number has already run for this exact model, regardless of result. */
+export async function hasRecordForPartAndModel(partNumber: string, modelId: string): Promise<boolean> {
+  const result = await getPool().query<{ exists: boolean }>(
+    'SELECT EXISTS (SELECT 1 FROM "toolingRecords" WHERE "partNumber" = $1 AND "modelId" = $2) AS exists',
+    [partNumber, modelId]
   )
-  return result.rows
+  return result.rows[0].exists
+}
+
+/** Whether this part number has a successful Sub_Ens cycle for any subassembly model. */
+export async function hasSuccessfulSubAssembly(partNumber: string): Promise<boolean> {
+  const result = await getPool().query<{ exists: boolean }>(
+    `SELECT EXISTS (
+       SELECT 1 FROM "toolingRecords"
+       WHERE "partNumber" = $1
+         AND status IS TRUE
+         AND LEFT("modelId", 7) = 'Sub_Ens'
+     ) AS exists`,
+    [partNumber]
+  )
+  return result.rows[0].exists
 }
 
 export async function insertRecord(record: NewToolingRecord): Promise<ToolingRecord> {

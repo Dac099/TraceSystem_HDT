@@ -1,7 +1,12 @@
 import { EventEmitter } from 'node:events'
 import { ConfigService } from './config'
 import { Logger } from './logger'
-import { findByToolIdentity, insertRecord, type ToolingRecord } from './database'
+import {
+  hasRecordForPartAndModel,
+  hasSuccessfulSubAssembly,
+  insertRecord,
+  type ToolingRecord
+} from './database'
 import type { PlcService } from './plc-service'
 import type { PlateScanPayload, ToolingScanPayload } from './tcp-interface'
 
@@ -10,10 +15,10 @@ export interface ParsedMatrix {
   machineLine: string // [9-10]
   shift: string // [11-12]
   julianDate: string // [13-18]
-  serialNumber: string // [19-23]
+  serialNumber: string // [19-25]
 }
 
-const MATRIX_MIN_LENGTH = 24
+const MATRIX_MIN_LENGTH = 26
 
 export function parseMatrix(matrix: string): ParsedMatrix | null {
   if (matrix.length < MATRIX_MIN_LENGTH) return null
@@ -22,7 +27,7 @@ export function parseMatrix(matrix: string): ParsedMatrix | null {
     machineLine: matrix.slice(9, 11),
     shift: matrix.slice(11, 13),
     julianDate: matrix.slice(13, 19),
-    serialNumber: matrix.slice(19, 24)
+    serialNumber: matrix.slice(19, 26)
   }
 }
 
@@ -52,6 +57,7 @@ export class StationProcess extends EventEmitter {
   private plate: PlateData | null = null
   private pending: PendingMatrix | null = null
   private processing = false
+  private scanQueue: Promise<void> = Promise.resolve()
 
   constructor(stationId: string, plc: PlcService, stationIndex: number) {
     super()
@@ -69,13 +75,35 @@ export class StationProcess extends EventEmitter {
     this.emit('warning', message)
   }
 
-  async onPlateScan(payload: PlateScanPayload): Promise<void> {
-    this.plate = { modelId: payload.modelId, toolingId: payload.toolingId }
-    this.log().info(`Station ${this.stationId}: plate stored (model=${payload.modelId}, tooling=${payload.toolingId})`)
-    if (this.pending && !this.processing) await this.guardedRun()
+  onPlateScan(payload: PlateScanPayload): Promise<void> {
+    return this.enqueueScan(() => this.acceptPlateScan(payload))
   }
 
-  async onToolingScan(payload: ToolingScanPayload): Promise<void> {
+  onToolingScan(payload: ToolingScanPayload): Promise<void> {
+    return this.enqueueScan(() => this.acceptToolingScan(payload))
+  }
+
+  /** Runs scanner events in arrival order so validation and cycle start are atomic per station. */
+  private enqueueScan(action: () => Promise<void>): Promise<void> {
+    const run = this.scanQueue.then(action)
+    this.scanQueue = run.catch((err) => {
+      this.log().error(`Station ${this.stationId}: process failed`, err)
+      this.warn('Error al procesar la herramienta')
+    })
+    return this.scanQueue
+  }
+
+  private async acceptPlateScan(payload: PlateScanPayload): Promise<void> {
+    if (!(await this.canAcceptScannerValue())) return
+
+    this.plate = { modelId: payload.modelId, toolingId: payload.toolingId }
+    this.log().info(`Station ${this.stationId}: plate stored (model=${payload.modelId}, tooling=${payload.toolingId})`)
+    if (this.pending) await this.runProcess()
+  }
+
+  private async acceptToolingScan(payload: ToolingScanPayload): Promise<void> {
+    if (!(await this.canAcceptScannerValue())) return
+
     const parsed = parseMatrix(payload.matrix)
     if (!parsed) {
       this.warn(`Matriz inválida: "${payload.matrix}"`)
@@ -89,67 +117,82 @@ export class StationProcess extends EventEmitter {
       this.log().info(`Station ${this.stationId}: matrix held, waiting for plate scan`)
       return
     }
-    if (this.processing) {
-      this.log().warn(`Station ${this.stationId}: scan ignored, cycle in progress`)
-      return
-    }
-    await this.guardedRun()
+    await this.runProcess()
   }
 
-  private async guardedRun(): Promise<void> {
-    try {
-      await this.runProcess()
-    } catch (err) {
-      this.log().error(`Station ${this.stationId}: process failed`, err)
-      this.warn('Error al procesar la herramienta')
+  /** Scanner values are accepted only when both local state and the PLC report no cycle. */
+  private async canAcceptScannerValue(): Promise<boolean> {
+    if (this.processing) {
+      await this.failValidation('Proceso en curso', false)
+      return false
     }
+
+    try {
+      if (await this.plc.readCycleStart(this.stationIndex)) {
+        await this.failValidation('Proceso en curso', false)
+        return false
+      }
+    } catch (err) {
+      this.log().error(`Station ${this.stationId}: could not read CycleStart`, err)
+      this.warn('Error al procesar la herramienta')
+      return false
+    }
+
+    return true
   }
 
   private async runProcess(): Promise<void> {
-    if (!this.pending || !this.plate) return
+    // 1. The machine must be ready.
+    if (!(await this.plc.readMachineReady(this.stationIndex))) {
+      await this.failValidation('Máquina no lista', false)
+      return
+    }
+
+    // 2. Both scanner values are required. Normal partial scans wait silently;
+    // this remains as a defensive guard for any direct process invocation.
+    if (!this.pending || !this.plate) {
+      await this.failValidation('Sin valores de escaner', false)
+      return
+    }
+
     const { matrix, parsed } = this.pending
     const plate = this.plate
-
-    // 1. The tool can be processed only when it has no records, no processed
-    //    record and fewer than 3 failed records.
-    const records = await findByToolIdentity(parsed.partNumber, parsed.serialNumber)
-    if (records.some((r) => r.status === true)) {
-      await this.reject('Herramienta ya procesada')
-      return
-    }
-    if (records.filter((r) => r.status === false).length >= 3) {
-      await this.reject('Herramienta rechazada: 3 registros fallidos')
-      return
-    }
-
-    // 2. The machine must be ready.
-    if (!(await this.plc.readMachineReady(this.stationIndex))) {
-      this.warn('La máquina no está lista')
-      return
-    }
 
     // 3. The model running in the machine must match the scanned plate.
     const currentModel = await this.plc.readCurrentModel(this.stationIndex)
     if (currentModel !== plate.modelId) {
-      await this.reject('Modelo capturado no coincide')
+      await this.failValidation('Modelo no coincide', true)
       return
     }
 
-    // 4. Start the cycle: hand tooling id and data matrix to the machine.
+    // 4. Final assembly requires a previous successful subassembly cycle for
+    // the same part number. The serial number is intentionally not involved.
+    if (currentModel.startsWith('Ens_Final') && !(await hasSuccessfulSubAssembly(parsed.partNumber))) {
+      await this.failValidation('Sin Sub. Ensamble', true)
+      return
+    }
+
+    // 5. A part number can run only once for an exact model, regardless of result.
+    if (await hasRecordForPartAndModel(parsed.partNumber, currentModel)) {
+      await this.failValidation('Pieza ya procesada', true)
+      return
+    }
+
+    // Start the cycle: hand tooling id and data matrix to the machine.
     await this.plc.startCycle(this.stationIndex, plate.toolingId, matrix)
     this.processing = true
     this.log().info(`Station ${this.stationId}: cycle started (tooling=${plate.toolingId}, matrix=${matrix})`)
   }
 
-  /** Rejects the tool: frontend warning + message to the machine HMI. */
-  private async reject(message: string): Promise<void> {
+  /** Reports a failed condition to the frontend and machine HMI. */
+  private async failValidation(message: string, clearPending: boolean): Promise<void> {
     this.warn(message)
     try {
       await this.plc.writeMessage(this.stationIndex, message)
     } catch (err) {
       this.log().error(`Station ${this.stationId}: could not write Messages tag`, err)
     }
-    this.pending = null
+    if (clearPending) this.pending = null
   }
 
   /** Triggered by the rising edge of the station ReqSavePart tag. */
@@ -161,6 +204,7 @@ export class StationProcess extends EventEmitter {
     try {
       const results = await this.plc.readSaveResults(this.stationIndex)
       const { matrix, parsed } = this.pending
+      const status = results.statusPart === 1
       const record = await insertRecord({
         stationId: this.stationId,
         modelId: this.plate.modelId,
@@ -171,13 +215,14 @@ export class StationProcess extends EventEmitter {
         shift: parsed.shift,
         julianDate: parsed.julianDate,
         serialNumber: parsed.serialNumber,
-        status: results.statusPart == 1,
+        status,
         finalLeakRate: results.finalLeakRate,
         finalPressure: results.finalPressure
       })
       this.log().info(`Station ${this.stationId}: record #${record.id} saved (status=${record.status})`)
 
-      await this.plc.resetAfterSave(this.stationIndex)
+      const savedMessage = status ? 'Pieza ok almacenada' : 'Pieza nOK almacenada'
+      await this.plc.resetAfterSave(this.stationIndex, savedMessage)
 
       // Reset the cycle state; the plate is kept until the next PlateScan.
       this.pending = null

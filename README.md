@@ -25,16 +25,33 @@ TCP scanners → TcpInterface (:3000) → StationProcess ×8 → toolingRecords
 - `electron/database.ts` — `pg` pool, creates `toolingRecords` if missing, parameterized queries only.
 - `electron/plc-service.ts` — one per PLC: connect with auto-reconnect, initial tag discovery (enables writes), `Scanner` subscriptions on `Server_St[0].HeartBeat` and `Server_St[i].ReqSavePart`, 10 s heartbeat watchdog ("PLC no conectado").
 - `electron/tcp-interface.ts` — TCP server on `0.0.0.0:3000`, classifies payloads and emits `ToolingScan` / `PlateScan`. The scanner IP → stationId map is implemented but commented out (scanners not available yet); everything is currently assigned to station `1`.
-- `electron/station-process.ts` — per-station workflow: matrix parsing, tool validation against DB records, `MachineReady` / `CurrentModel` checks, cycle start, record save on `ReqSavePart`, PLC reset handshake.
+- `electron/station-process.ts` — serialized per-station workflow: matrix parsing, part/model validation against DB records, `MachineReady` / `CurrentModel` checks, cycle start, record save on `ReqSavePart`, PLC reset handshake.
 - `electron/ipc.ts` + `electron/preload.ts` — typed `window.traceability` bridge (records query/latest/CSV export, alarm and record push channels).
 - `src/views/ActivityView.vue` — last 100 processed tools, live updates.
 - `src/views/RecordsView.vue` — paginated (50) records with filters and CSV export (all rows matching the filters).
 
 ## TCP scanner protocol
 
-- **ToolingScan**: `P12815849L3S2D26195N0055` — parsed by index: part number `[0-8]`,
-  machine line `[9-10]`, shift `[11-12]`, Julian date `[13-18]`, serial number `[19-23]`.
+- **ToolingScan**: `P12815849L3S2D261950000055` — parsed by index: part number `[0-8]`,
+  machine line `[9-10]`, shift `[11-12]`, Julian date `[13-18]`, serial number `[19-25]`.
+  The seven-character serial is stored for traceability but does not identify the part; identity is the
+  nine-character part number.
 - **PlateScan**: `Ens_Final_12749631,T1` — `modelId,toolingId`.
+
+## Station cycle rules
+
+- Plate and tooling scans may arrive in either order. The first value waits silently for the second;
+  the plate is retained across cycles until another plate is accepted.
+- A scan is accepted only when both the local process state and the PLC `CycleStart` tag report no
+  cycle. Otherwise the scan is discarded without changing station data and `Proceso en curso` is
+  written to the PLC.
+- Cycle validation order is: `MachineReady`, scanner values, exact `CurrentModel`/plate match,
+  successful `Sub_Ens%` prerequisite for an `Ens_Final%` model, then no prior record for the same
+  part number and exact model. The serial number is not used by these checks.
+- A part number may run only once for an exact model, regardless of whether that record is OK or nOK.
+  Final assembly is allowed only after the same part number has an OK subassembly record.
+- After `ReqSavePart`, the result is stored and the PLC receives `Pieza ok almacenada` or
+  `Pieza nOK almacenada`. That message remains until another process message overwrites it.
 
 Quick manual test (while `pnpm dev` is running):
 
@@ -42,7 +59,7 @@ Quick manual test (while `pnpm dev` is running):
 $c = New-Object System.Net.Sockets.TcpClient('127.0.0.1', 3000)
 $s = $c.GetStream()
 $b = [Text.Encoding]::ASCII.GetBytes("Ens_Final_12749631,T1`n"); $s.Write($b, 0, $b.Length)
-$b = [Text.Encoding]::ASCII.GetBytes("P12815849L3S2D26195N0055`n"); $s.Write($b, 0, $b.Length)
+$b = [Text.Encoding]::ASCII.GetBytes("P12815849L3S2D261950000055`n"); $s.Write($b, 0, $b.Length)
 $c.Close()
 ```
 
