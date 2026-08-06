@@ -32,8 +32,8 @@ TCP scanners → TcpInterface (:3000) → StationProcess ×8 → toolingRecords
 
 ## TCP scanner protocol
 
-- **ToolingScan**: `P12815849L3S2D261950000055` — parsed by index: part number `[0-8]`,
-  machine line `[9-10]`, shift `[11-12]`, Julian date `[13-18]`, serial number from `[19]` through
+- **ToolingScan**: `P12815849L26805S2D261950000055` — parsed by index: part number `[0-8]`,
+  machine line `[9-14]`, shift `[15-16]`, Julian date `[17-22]`, serial number from `[23]` through
   a maximum of seven characters. The serial is stored for traceability but does not identify the part; identity is the
   nine-character part number.
 - **PlateScan**: `Ens_Final_12749631,T1` — `modelId,toolingId`.
@@ -47,8 +47,8 @@ TCP scanners → TcpInterface (:3000) → StationProcess ×8 → toolingRecords
   written to the PLC.
 - Cycle validation order is: `MachineReady`, scanner values, exact `CurrentModel`/plate match,
   successful `Sub_Ens%` prerequisite for an `Ens_Final%` model, then no prior record for the same
-  part number and exact model. The serial number is not used by these checks.
-- A part number may run only once for an exact model, regardless of whether that record is OK or nOK.
+  part number, serial number, and exact model. The serial number is not used for the subassembly prerequisite.
+- A part/serial-number combination may run only once for an exact model, regardless of whether that record is OK or nOK.
   Final assembly is allowed only after the same part number has an OK subassembly record.
 - After `ReqSavePart`, the result is stored and the PLC receives `Dato guardado`.
   That message remains until another process message overwrites it.
@@ -59,7 +59,7 @@ Quick manual test (while `pnpm dev` is running):
 $c = New-Object System.Net.Sockets.TcpClient('127.0.0.1', 3000)
 $s = $c.GetStream()
 $b = [Text.Encoding]::ASCII.GetBytes("Ens_Final_12749631,T1`n"); $s.Write($b, 0, $b.Length)
-$b = [Text.Encoding]::ASCII.GetBytes("P12815849L3S2D261950000055`n"); $s.Write($b, 0, $b.Length)
+$b = [Text.Encoding]::ASCII.GetBytes("P12815849L26805S2D261950000055`n"); $s.Write($b, 0, $b.Length)
 $c.Close()
 ```
 

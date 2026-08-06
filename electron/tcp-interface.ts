@@ -21,7 +21,7 @@ const TEMP_DEFAULT_STATION_ID = '1'
  * TCP server that receives data from the network barcode scanners.
  *
  * Emits:
- *  - 'ToolingScan' (payload: ToolingScanPayload) e.g. P12815849L3S2D261950000055
+ *  - 'ToolingScan' (payload: ToolingScanPayload) e.g. P12815849L26805S2D261950000055
  *  - 'PlateScan'   (payload: PlateScanPayload)   e.g. Ens_Final_12749631,T1
  */
 export class TcpInterface extends EventEmitter {
@@ -79,7 +79,7 @@ export class TcpInterface extends EventEmitter {
       return
     }
 
-    // ToolingScan: "P12815849L3S2D261950000055"
+    // ToolingScan: "P12815849L26805S2D261950000055"
     const matrix = data
       .replace(/\x1D/g, "|") // Non-printable character: GS
       .replace(/\x1E/g, "|") // Non-printable character: RS

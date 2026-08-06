@@ -62,7 +62,7 @@ CREATE TABLE IF NOT EXISTS "toolingRecords" (
   "toolingId" char(2),
   "matrixReaded" varchar(30),
   "partNumber" varchar(9),
-  "machineLine" varchar(2),
+  "machineLine" varchar(6),
   "shift" varchar(2),
   "julianDate" varchar(6),
   "serialNumber" varchar(7),
@@ -80,6 +80,11 @@ export async function initDatabase(): Promise<void> {
   await getPool().query(
     'ALTER TABLE "toolingRecords" ALTER COLUMN "serialNumber" TYPE varchar(7)'
   )
+  // The matrix line field grew from two to six characters. Widening preserves
+  // historical rows and lets existing installations accept the new scanner format.
+  await getPool().query(
+    'ALTER TABLE "toolingRecords" ALTER COLUMN "machineLine" TYPE varchar(6)'
+  )
   Logger.get().info('Database ready: table "toolingRecords" verified')
 }
 
@@ -90,11 +95,20 @@ export async function closeDatabase(): Promise<void> {
   }
 }
 
-/** Whether this part number has already run for this exact model, regardless of result. */
-export async function hasRecordForPartAndModel(partNumber: string, modelId: string): Promise<boolean> {
+/** Whether this exact part number, serial number, and model combination already ran, regardless of result. */
+export async function hasRecordForPartModelAndSerial(
+  partNumber: string,
+  modelId: string,
+  serialNumber: string
+): Promise<boolean> {
   const result = await getPool().query<{ exists: boolean }>(
-    'SELECT EXISTS (SELECT 1 FROM "toolingRecords" WHERE "partNumber" = $1 AND "modelId" = $2) AS exists',
-    [partNumber, modelId]
+    `SELECT EXISTS (
+       SELECT 1 FROM "toolingRecords"
+       WHERE "partNumber" = $1
+         AND "modelId" = $2
+         AND "serialNumber" = $3
+     ) AS exists`,
+    [partNumber, modelId, serialNumber]
   )
   return result.rows[0].exists
 }

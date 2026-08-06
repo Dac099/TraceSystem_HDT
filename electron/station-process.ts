@@ -2,7 +2,7 @@ import { EventEmitter } from 'node:events'
 import { ConfigService } from './config'
 import { Logger } from './logger'
 import {
-  hasRecordForPartAndModel,
+  hasRecordForPartModelAndSerial,
   hasSuccessfulSubAssembly,
   insertRecord,
   type ToolingRecord
@@ -12,24 +12,24 @@ import type { PlateScanPayload, ToolingScanPayload } from './tcp-interface'
 
 export interface ParsedMatrix {
   partNumber: string // [0-8]
-  machineLine: string // [9-10]
-  shift: string // [11-12]
-  julianDate: string // [13-18]
-  serialNumber: string // starts at [19], maximum 7 characters
+  machineLine: string // [9-14]
+  shift: string // [15-16]
+  julianDate: string // [17-22]
+  serialNumber: string // starts at [23], maximum 7 characters
 }
 
-const SERIAL_NUMBER_START = 19
+const SERIAL_NUMBER_START = 23
 const MAX_SERIAL_NUMBER_LENGTH = 7
-// The fixed matrix fields end at index 18. At least one serial character is required.
+// The fixed matrix fields end at index 22. At least one serial character is required.
 const MATRIX_MIN_LENGTH = SERIAL_NUMBER_START + 1
 
 export function parseMatrix(matrix: string): ParsedMatrix | null {
   if (matrix.length < MATRIX_MIN_LENGTH) return null
   return {
     partNumber: matrix.slice(0, 9),
-    machineLine: matrix.slice(9, 11),
-    shift: matrix.slice(11, 13),
-    julianDate: matrix.slice(13, 19),
+    machineLine: matrix.slice(9, 15),
+    shift: matrix.slice(15, 17),
+    julianDate: matrix.slice(17, 23),
     serialNumber: matrix.slice(SERIAL_NUMBER_START, SERIAL_NUMBER_START + MAX_SERIAL_NUMBER_LENGTH)
   }
 }
@@ -147,7 +147,7 @@ export class StationProcess extends EventEmitter {
   private async runProcess(): Promise<void> {
     // 1. The machine must be ready.
     if (!(await this.plc.readMachineReady(this.stationIndex))) {
-      await this.failValidation('Máquina no lista', false)
+      await this.failValidation('Maquina no lista', false)
       return
     }
 
@@ -175,8 +175,8 @@ export class StationProcess extends EventEmitter {
       return
     }
 
-    // 5. A part number can run only once for an exact model, regardless of result.
-    if (await hasRecordForPartAndModel(parsed.partNumber, currentModel)) {
+    // 5. A part/serial combination can run only once for an exact model, regardless of result.
+    if (await hasRecordForPartModelAndSerial(parsed.partNumber, currentModel, parsed.serialNumber)) {
       await this.failValidation('Pieza ya procesada', true)
       return
     }
